@@ -1,0 +1,42 @@
+{
+  "name": "forever-message-ipfs",
+  "version": "1.0.0",
+  "description": "Production-ready IPFS storage service for Forever Message using Storacha",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prebuild": "yarn clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ipfs",
+    "storacha",
+    "web3",
+    "storage",
+    "decentralized",
+    "forever-message"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "@storacha/client": "^1.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "typescript": "^5.9.3"
+  }
+}

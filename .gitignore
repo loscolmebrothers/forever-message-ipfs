@@ -1,0 +1,26 @@
+# Dependencies
+node_modules
+yarn-error.log
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Storacha credentials
+storacha-space-key.txt
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode
+.idea
+*.sublime-workspace
