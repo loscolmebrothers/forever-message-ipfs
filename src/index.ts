@@ -1,23 +1,19 @@
-/**
- * Forever Message IPFS Storage
- * Main entry point for the IPFS storage service
- */
-
 export {
   IPFSService,
   createIPFSService,
   getIPFSService,
   resetIPFSService,
-} from "./ipfsService.js";
+  StorachaConfig,
+  IIPFSService,
+  CacheEntry,
+} from "./ipfsService";
 
+// Re-export types from shared package
 export {
   BottleContent,
   CommentContent,
   IPFSContent,
   UploadResult,
-  StorachaConfig,
   IPFSError,
   IPFSErrorCode,
-  IIPFSService,
-  CacheEntry,
-} from "./types.js";
+} from "@loscolmebrothers/forever-message-types";

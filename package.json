@@ -1,5 +1,5 @@
 {
-  "name": "forever-message-ipfs",
+  "name": "@loscolmebrothers/forever-message-ipfs",
   "version": "1.0.0",
   "description": "Production-ready IPFS storage service for Forever Message using Storacha",
   "main": "dist/index.js",
@@ -19,8 +19,8 @@
     "decentralized",
     "forever-message"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "LOS COLMEBROTHERS",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -33,6 +33,7 @@
     "README.md"
   ],
   "dependencies": {
+    "@loscolmebrothers/forever-message-types": "^1.0.1",
     "@storacha/client": "^1.8.2"
   },
   "devDependencies": {
