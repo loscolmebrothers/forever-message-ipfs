@@ -1,8 +1,8 @@
 import * as Client from "@storacha/client";
 import {
-  BottleContent,
-  CommentContent,
-  IPFSContent,
+  IPFSBottle,
+  IPFSComment,
+  IPFSItem,
   UploadResult,
   IPFSError,
   IPFSErrorCode,
@@ -21,32 +21,34 @@ export interface CacheEntry<T> {
 
 export interface IIPFSService {
   initialize(): Promise<void>;
-  uploadBottle(content: string, userId: string): Promise<UploadResult>;
+  uploadBottle(message: string, userId: string): Promise<UploadResult>;
   uploadComment(
-    content: string,
+    message: string,
     bottleId: number,
     userId: string,
   ): Promise<UploadResult>;
-  getContent<T extends IPFSContent>(cid: string): Promise<T>;
+  updateBottleCounts(
+    originalCid: string,
+    likeCount: number,
+    commentCount: number,
+  ): Promise<UploadResult>;
+  getItem<T extends IPFSItem>(cid: string): Promise<T>;
   isInitialized(): boolean;
   clearCache(): void;
 }
 
-const DEFAULT_CONFIG = {
-  gatewayUrl: "https://storacha.link/ipfs",
-  cacheExpirationMs: 5 * 60 * 1000,
-};
-
 export class IPFSService implements IIPFSService {
   private client: Client.Client | null = null;
   private gatewayUrl: string;
-  private cache: Map<string, CacheEntry<IPFSContent>> = new Map();
+  private cache: Map<string, CacheEntry<IPFSItem>> = new Map();
   private cacheExpirationMs: number;
   private initialized: boolean = false;
+  private spaceDID?: string;
 
   constructor(config: StorachaConfig = {}) {
-    this.gatewayUrl = config.gatewayUrl || DEFAULT_CONFIG.gatewayUrl;
-    this.cacheExpirationMs = DEFAULT_CONFIG.cacheExpirationMs;
+    this.gatewayUrl = config.gatewayUrl || "https://storacha.link/ipfs";
+    this.cacheExpirationMs = 5 * 60 * 1000;
+    this.spaceDID = config.spaceDID;
   }
 
   async initialize(): Promise<void> {
@@ -56,6 +58,11 @@ export class IPFSService implements IIPFSService {
 
     try {
       this.client = await Client.create();
+
+      if (this.spaceDID) {
+        await this.client.setCurrentSpace(this.spaceDID as `did:key:${string}`);
+      }
+
       this.initialized = true;
     } catch (error) {
       throw new IPFSError(
@@ -67,13 +74,9 @@ export class IPFSService implements IIPFSService {
   }
 
   async login(email: string): Promise<void> {
-    this.ensureInitialized();
-
     try {
-      if (!this.client) {
-        throw new Error("Client not initialized");
-      }
-      await this.client.login(email as `${string}@${string}`);
+      this.ensureInitialized();
+      await this.client!.login(email as `${string}@${string}`);
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.SPACE_REGISTRATION_FAILED,
@@ -88,37 +91,64 @@ export class IPFSService implements IIPFSService {
   }
 
   getDID(): string | null {
-    if (!this.client) {
-      return null;
-    }
-    return this.client.did();
+    this.ensureInitialized();
+
+    return this.client!.did();
   }
 
-  async uploadBottle(content: string, userId: string): Promise<UploadResult> {
+  async uploadBottle(message: string, userId: string): Promise<UploadResult> {
     this.ensureInitialized();
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const bottleData: BottleContent = {
-      content,
+    const bottleData: IPFSBottle = {
+      message,
       type: "bottle",
       userId,
       timestamp,
       createdAt: new Date().toISOString(),
+      likeCount: 0,
+      commentCount: 0,
     };
 
     return this.uploadJSON(bottleData);
   }
 
+  async updateBottleCounts(
+    originalCid: string,
+    likeCount: number,
+    commentCount: number,
+  ): Promise<UploadResult> {
+    this.ensureInitialized();
+
+    const originalBottle = await this.getItem<IPFSBottle>(originalCid);
+
+    if (originalBottle.type !== "bottle") {
+      throw new IPFSError(
+        IPFSErrorCode.PARSE_FAILED,
+        "CID does not point to a bottle",
+      );
+    }
+
+    const updatedBottle: IPFSBottle = {
+      ...originalBottle,
+      likeCount,
+      commentCount,
+    };
+
+    this.cache.delete(originalCid);
+    return this.uploadJSON(updatedBottle);
+  }
+
   async uploadComment(
-    content: string,
+    message: string,
     bottleId: number,
     userId: string,
   ): Promise<UploadResult> {
     this.ensureInitialized();
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const commentData: CommentContent = {
-      content,
+    const commentData: IPFSComment = {
+      message,
       type: "comment",
       bottleId,
       userId,
@@ -129,20 +159,15 @@ export class IPFSService implements IIPFSService {
     return this.uploadJSON(commentData);
   }
 
-  private async uploadJSON(data: IPFSContent): Promise<UploadResult> {
-    if (!this.client) {
-      throw new IPFSError(
-        IPFSErrorCode.NOT_INITIALIZED,
-        "Client not initialized",
-      );
-    }
+  private async uploadJSON(data: IPFSItem): Promise<UploadResult> {
+    this.ensureInitialized();
 
     try {
       const jsonString = JSON.stringify(data);
       const blob = new Blob([jsonString], { type: "application/json" });
       const file = new File([blob], "data.json", { type: "application/json" });
 
-      const cid = await this.client.uploadFile(file);
+      const cid = await this.client!.uploadFile(file);
       const size = new TextEncoder().encode(jsonString).length;
       const url = `${this.gatewayUrl}/${cid}`;
 
@@ -154,15 +179,13 @@ export class IPFSService implements IIPFSService {
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.UPLOAD_FAILED,
-        "Failed to upload content to IPFS",
+        "Failed to upload data to IPFS",
         error instanceof Error ? error : undefined,
       );
     }
   }
 
-  async getContent<T extends IPFSContent = IPFSContent>(
-    cid: string,
-  ): Promise<T> {
+  async getItem<T extends IPFSItem = IPFSItem>(cid: string): Promise<T> {
     this.ensureInitialized();
 
     const cached = this.getFromCache<T>(cid);
@@ -180,66 +203,66 @@ export class IPFSService implements IIPFSService {
 
       const data = (await response.json()) as T;
 
-      this.validateContent(data);
+      this.validateItem(data);
       this.storeInCache(cid, data);
 
       return data;
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.FETCH_FAILED,
-        `Failed to fetch content from IPFS: ${cid}`,
+        `Failed to fetch data from IPFS: ${cid}`,
         error instanceof Error ? error : undefined,
       );
     }
   }
 
-  private validateContent(data: unknown): asserts data is IPFSContent {
+  private validateItem(data: unknown): asserts data is IPFSItem {
     if (!data || typeof data !== "object") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        "Invalid content: not an object",
+        "Invalid data: not an object",
       );
     }
 
-    const content = data as Record<string, unknown>;
+    const record = data as Record<string, unknown>;
 
-    if (typeof content.content !== "string") {
+    if (typeof record.message !== "string") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid content: missing or invalid "content" field',
+        'Invalid data: missing or invalid "message" field',
       );
     }
 
-    if (content.type !== "bottle" && content.type !== "comment") {
+    if (record.type !== "bottle" && record.type !== "comment") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid content: type must be "bottle" or "comment"',
+        'Invalid data: type must be "bottle" or "comment"',
       );
     }
 
-    if (typeof content.userId !== "string") {
+    if (typeof record.userId !== "string") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid content: missing or invalid "userId" field',
+        'Invalid data: missing or invalid "userId" field',
       );
     }
 
-    if (typeof content.timestamp !== "number") {
+    if (typeof record.timestamp !== "number") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid content: missing or invalid "timestamp" field',
+        'Invalid data: missing or invalid "timestamp" field',
       );
     }
 
-    if (content.type === "comment" && typeof content.bottleId !== "number") {
+    if (record.type === "comment" && typeof record.bottleId !== "number") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid content: comment missing "bottleId" field',
+        'Invalid data: comment missing "bottleId" field',
       );
     }
   }
 
-  private getFromCache<T extends IPFSContent>(cid: string): T | null {
+  private getFromCache<T extends IPFSItem>(cid: string): T | null {
     const entry = this.cache.get(cid);
     if (!entry) {
       return null;
@@ -254,9 +277,9 @@ export class IPFSService implements IIPFSService {
     return entry.data as T;
   }
 
-  private storeInCache(cid: string, data: IPFSContent): void {
+  private storeInCache(cid: string, data: IPFSItem): void {
     const now = Date.now();
-    const entry: CacheEntry<IPFSContent> = {
+    const entry: CacheEntry<IPFSItem> = {
       data,
       timestamp: now,
       expiresAt: now + this.cacheExpirationMs,
@@ -268,10 +291,6 @@ export class IPFSService implements IIPFSService {
     this.cache.clear();
   }
 
-  setCacheExpiration(ms: number): void {
-    this.cacheExpirationMs = ms;
-  }
-
   private ensureInitialized(): void {
     if (!this.initialized || !this.client) {
       throw new IPFSError(
@@ -279,18 +298,6 @@ export class IPFSService implements IIPFSService {
         "IPFS Service not initialized. Call initialize() first.",
       );
     }
-  }
-
-  getCacheStats(): { size: number; entries: number } {
-    let totalSize = 0;
-    this.cache.forEach((entry) => {
-      totalSize += JSON.stringify(entry.data).length;
-    });
-
-    return {
-      size: totalSize,
-      entries: this.cache.size,
-    };
   }
 }
 

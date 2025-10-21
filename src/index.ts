@@ -6,14 +6,6 @@ export {
   StorachaConfig,
   IIPFSService,
   CacheEntry,
-} from "./ipfsService";
+} from "./service";
 
-// Re-export types from shared package
-export {
-  BottleContent,
-  CommentContent,
-  IPFSContent,
-  UploadResult,
-  IPFSError,
-  IPFSErrorCode,
-} from "@loscolmebrothers/forever-message-types";
+export { BottleManager, BottleManagerConfig } from "./bottleManager";

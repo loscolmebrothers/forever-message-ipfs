@@ -59,9 +59,9 @@ const commentResult = await ipfs.uploadComment(
 );
 
 // Retrieve content by CID
-const content = await ipfs.getContent(result.cid);
-console.log('Content:', content.content);
-console.log('Type:', content.type); // 'bottle' or 'comment'
+const bottleData = await ipfs.getContent(result.cid);
+console.log('Message:', bottleData.message); // The actual message
+console.log('Type:', bottleData.type); // 'bottle' or 'comment'
 ```
 
 ### Integration with Smart Contract
@@ -153,11 +153,11 @@ console.log('Client DID:', did);
 
 ## Data Structures
 
-### Bottle Content
+### IPFSBottle
 
 ```typescript
 {
-  content: string;        // The message text
+  message: string;        // The message text
   type: 'bottle';         // Content type
   userId: string;         // Supabase user ID
   timestamp: number;      // Unix timestamp (seconds)
@@ -165,11 +165,11 @@ console.log('Client DID:', did);
 }
 ```
 
-### Comment Content
+### IPFSComment
 
 ```typescript
 {
-  content: string;        // The comment text
+  message: string;        // The comment text
   type: 'comment';        // Content type
   bottleId: number;       // Reference to bottle ID from smart contract
   userId: string;         // Supabase user ID
@@ -185,7 +185,7 @@ console.log('Client DID:', did);
 #### `initialize(): Promise<void>`
 Initialize the Storacha client. Must be called before any operations.
 
-#### `uploadBottle(content: string, userId: string): Promise<UploadResult>`
+#### `uploadBottle(message: string, userId: string): Promise<UploadResult>`
 Upload a bottle message to IPFS.
 
 **Returns:**
@@ -197,11 +197,11 @@ Upload a bottle message to IPFS.
 }
 ```
 
-#### `uploadComment(content: string, bottleId: number, userId: string): Promise<UploadResult>`
+#### `uploadComment(message: string, bottleId: number, userId: string): Promise<UploadResult>`
 Upload a comment to IPFS.
 
 #### `getContent<T extends IPFSContent>(cid: string): Promise<T>`
-Retrieve content from IPFS by CID. Uses caching automatically.
+Retrieve content from IPFS by CID. Uses caching automatically. Returns `IPFSBottle` or `IPFSComment`.
 
 #### `clearCache(): void`
 Clear all cached content.
@@ -273,7 +273,7 @@ function MessageForm() {
 
   const handleSubmit = async (message) => {
     if (!ipfs) return;
-    
+
     const result = await ipfs.uploadBottle(message, userId);
     // Pass result.cid to your smart contract
     await contract.postMessage(result.cid);
