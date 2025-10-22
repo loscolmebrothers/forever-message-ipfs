@@ -1,14 +1,16 @@
 # Forever Message IPFS Storage
 
-Production-ready IPFS storage service for Forever Message platform using Storacha. This library handles storing and retrieving bottle messages and comments on IPFS/Filecoin via Storacha (formerly web3.storage).
+Production-ready IPFS storage service for Forever Message platform using Storacha. This library provides modular, composable components for managing bottle state, contract interactions, IPFS synchronization, and forever status promotion.
 
 ## Features
 
+- **Modular Architecture**: Clean separation of concerns with focused modules
 - **Type-safe**: Full TypeScript support with comprehensive type definitions
 - **Production-ready**: Error handling, caching, and validation built-in
 - **Simple API**: Easy-to-use methods for uploading and retrieving content
 - **Caching**: Built-in content caching to reduce network requests
 - **Storacha Integration**: Uses Storacha for reliable IPFS/Filecoin storage
+- **Tested**: Comprehensive test suite with unit and integration tests
 
 ## Installation
 
@@ -23,132 +25,180 @@ yarn install
 yarn build
 
 # Build and watch for changes
-yarn build:watch
+yarn dev
 
-# Type check without building
-yarn typecheck
+# Run tests
+yarn test
+
+# Clean build artifacts
+yarn clean
 ```
+
+## Architecture
+
+The library is organized into focused, composable modules:
+
+- **`IPFSService`** - Handles IPFS storage operations (upload, retrieve, cache)
+- **`StateTracker`** - Manages in-memory bottle state (likes, comments, IPFS hash)
+- **`BottleContract`** - Wraps all smart contract interactions
+- **`IPFSCountSync`** - Synchronizes counts between state, IPFS, and contract
+- **`ForeverManager`** - Manages promotion to "forever" status based on thresholds
 
 ## Usage
 
-### Basic Usage
+### IPFS Storage
 
 ```typescript
-import { createIPFSService } from 'forever-message-ipfs';
+import { createIPFSService } from '@loscolmebrothers/forever-message-ipfs';
 
-// Initialize the service
 const ipfs = await createIPFSService({
-  gatewayUrl: 'https://storacha.link/ipfs' // optional, this is the default
+  spaceDID: process.env.STORACHA_SPACE_DID,
+  gatewayUrl: 'https://storacha.link/ipfs'
 });
 
-// Upload a bottle message
-const result = await ipfs.uploadBottle(
-  'This is my message in a bottle!',
-  'user-123' // Supabase user ID
-);
-
+const result = await ipfs.uploadBottle('Hello World!', 'user123');
 console.log('CID:', result.cid);
-console.log('URL:', result.url);
-console.log('Size:', result.size);
 
-// Upload a comment
-const commentResult = await ipfs.uploadComment(
-  'Great message!',
-  42, // bottle ID from smart contract
-  'user-456' // Supabase user ID
-);
-
-// Retrieve content by CID
-const bottleData = await ipfs.getContent(result.cid);
-console.log('Message:', bottleData.message); // The actual message
-console.log('Type:', bottleData.type); // 'bottle' or 'comment'
+const bottle = await ipfs.getItem(result.cid);
+console.log('Message:', bottle.message);
 ```
 
-### Integration with Smart Contract
+### State Management
 
 ```typescript
-import { createIPFSService } from 'forever-message-ipfs';
+import { StateTracker } from '@loscolmebrothers/forever-message-ipfs';
+
+const state = new StateTracker();
+
+state.load(1, 'QmHash123', 10, 5);
+
+state.incrementLikes(1);
+state.incrementComments(1);
+
+const { likeCount, commentCount } = state.get(1);
+```
+
+### Contract Interactions
+
+```typescript
+import { BottleContract } from '@loscolmebrothers/forever-message-ipfs';
 import { ethers } from 'ethers';
 
-// Initialize IPFS service
-const ipfs = await createIPFSService();
+const contract = new BottleContract({
+  contractAddress: process.env.CONTRACT_ADDRESS,
+  contractABI: YOUR_ABI,
+  signer: wallet
+});
 
-// Upload message to IPFS first
-const uploadResult = await ipfs.uploadBottle(messageText, userId);
-
-// Then store the CID in your smart contract
-const contract = new ethers.Contract(contractAddress, abi, signer);
-const tx = await contract.postMessage(uploadResult.cid);
-await tx.wait();
-
-console.log('Message posted! CID:', uploadResult.cid);
+const bottleId = await contract.createBottle('QmHash123');
+await contract.likeBottle(bottleId, userAddress);
+await contract.addComment(bottleId, 'QmCommentHash');
 ```
 
-### Using the Singleton Pattern
+### IPFS Synchronization
 
 ```typescript
-import { getIPFSService } from 'forever-message-ipfs';
+import { IPFSCountSync } from '@loscolmebrothers/forever-message-ipfs';
 
-// Get or create the default instance
-const ipfs = await getIPFSService();
+const sync = new IPFSCountSync(ipfsService, state, contract);
 
-// Use it anywhere in your app
-const result = await ipfs.uploadBottle('Hello IPFS!', 'user-123');
+await sync.syncBottleCounts(bottleId);
 ```
 
-### Error Handling
+### Forever Status Management
 
 ```typescript
-import { IPFSError, IPFSErrorCode } from 'forever-message-ipfs';
+import { ForeverManager } from '@loscolmebrothers/forever-message-ipfs';
 
-try {
-  const result = await ipfs.uploadBottle(message, userId);
-} catch (error) {
-  if (error instanceof IPFSError) {
-    switch (error.code) {
-      case IPFSErrorCode.NOT_INITIALIZED:
-        console.error('Service not initialized');
-        break;
-      case IPFSErrorCode.UPLOAD_FAILED:
-        console.error('Upload failed:', error.message);
-        break;
-      case IPFSErrorCode.FETCH_FAILED:
-        console.error('Failed to fetch:', error.message);
-        break;
-      default:
-        console.error('IPFS error:', error.message);
-    }
-  }
-}
+const foreverManager = new ForeverManager(state, contract, {
+  likes: 100,
+  comments: 4
+});
+
+await foreverManager.promote(bottleId);
 ```
 
-### Cache Management
+### Complete Example: Composing Modules
 
 ```typescript
-// Clear the cache
-ipfs.clearCache();
+import {
+  createIPFSService,
+  StateTracker,
+  BottleContract,
+  IPFSCountSync,
+  ForeverManager
+} from '@loscolmebrothers/forever-message-ipfs';
+import { ethers } from 'ethers';
 
-// Set custom cache expiration (in milliseconds)
-ipfs.setCacheExpiration(10 * 60 * 1000); // 10 minutes
+const ipfs = await createIPFSService({ spaceDID: process.env.STORACHA_SPACE_DID });
+const state = new StateTracker();
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-// Get cache statistics
-const stats = ipfs.getCacheStats();
-console.log('Cached entries:', stats.entries);
-console.log('Cache size (bytes):', stats.size);
+const contract = new BottleContract({
+  contractAddress: process.env.CONTRACT_ADDRESS,
+  contractABI: YOUR_ABI,
+  signer: wallet
+});
+
+const ipfsSync = new IPFSCountSync(ipfs, state, contract);
+const foreverManager = new ForeverManager(state, contract, { likes: 100, comments: 4 });
+
+const uploadResult = await ipfs.uploadBottle('Hello World!', 'user123');
+const bottleId = await contract.createBottle(uploadResult.cid);
+state.load(bottleId, uploadResult.cid, 0, 0);
+
+state.incrementLikes(bottleId);
+await ipfsSync.syncBottleCounts(bottleId);
+await foreverManager.promote(bottleId);
 ```
 
-### Advanced: Space Management
+## API Reference
 
-For uploading content, you need to set up a Storacha space:
+### IPFSService
 
 ```typescript
-// Login with email (first time setup)
-await ipfs.login('your-email@example.com');
-// Follow the email verification flow in your inbox
+await ipfs.initialize()
+await ipfs.uploadBottle(message: string, userId: string)
+await ipfs.uploadComment(message: string, bottleId: number, userId: string)
+await ipfs.updateBottleCounts(originalCid: string, likeCount: number, commentCount: number)
+await ipfs.getItem<T>(cid: string)
+ipfs.clearCache()
+ipfs.isInitialized()
+```
 
-// Get the client DID
-const did = ipfs.getDID();
-console.log('Client DID:', did);
+### StateTracker
+
+```typescript
+state.load(bottleId: number, ipfsHash: string, likeCount: number, commentCount: number)
+state.get(bottleId: number)
+state.incrementLikes(bottleId: number)
+state.decrementLikes(bottleId: number)
+state.incrementComments(bottleId: number)
+state.updateIPFSHash(bottleId: number, newHash: string)
+```
+
+### BottleContract
+
+```typescript
+await contract.createBottle(ipfsHash: string)
+await contract.likeBottle(bottleId: number, likerAddress: string)
+await contract.unlikeBottle(bottleId: number, unlikerAddress: string)
+await contract.addComment(bottleId: number, commentIpfsHash: string)
+await contract.updateBottleIPFS(bottleId: number, newIpfsHash: string)
+await contract.markBottleAsForever(bottleId: number)
+await contract.getBottle(bottleId: number)
+```
+
+### IPFSCountSync
+
+```typescript
+await ipfsSync.syncBottleCounts(bottleId: number)
+```
+
+### ForeverManager
+
+```typescript
+await foreverManager.promote(bottleId: number)
 ```
 
 ## Data Structures
@@ -157,11 +207,13 @@ console.log('Client DID:', did);
 
 ```typescript
 {
-  message: string;        // The message text
-  type: 'bottle';         // Content type
-  userId: string;         // Supabase user ID
-  timestamp: number;      // Unix timestamp (seconds)
-  createdAt: string;      // ISO 8601 timestamp
+  message: string;
+  type: 'bottle';
+  userId: string;
+  timestamp: number;
+  createdAt: string;
+  likeCount: number;
+  commentCount: number;
 }
 ```
 
@@ -169,173 +221,68 @@ console.log('Client DID:', did);
 
 ```typescript
 {
-  message: string;        // The comment text
-  type: 'comment';        // Content type
-  bottleId: number;       // Reference to bottle ID from smart contract
-  userId: string;         // Supabase user ID
-  timestamp: number;      // Unix timestamp (seconds)
-  createdAt: string;      // ISO 8601 timestamp
+  message: string;
+  type: 'comment';
+  bottleId: number;
+  userId: string;
+  timestamp: number;
+  createdAt: string;
 }
 ```
 
-## API Reference
-
-### `IPFSService`
-
-#### `initialize(): Promise<void>`
-Initialize the Storacha client. Must be called before any operations.
-
-#### `uploadBottle(message: string, userId: string): Promise<UploadResult>`
-Upload a bottle message to IPFS.
-
-**Returns:**
-```typescript
-{
-  cid: string;    // IPFS Content Identifier
-  size: number;   // Size in bytes
-  url: string;    // Gateway URL
-}
-```
-
-#### `uploadComment(message: string, bottleId: number, userId: string): Promise<UploadResult>`
-Upload a comment to IPFS.
-
-#### `getContent<T extends IPFSContent>(cid: string): Promise<T>`
-Retrieve content from IPFS by CID. Uses caching automatically. Returns `IPFSBottle` or `IPFSComment`.
-
-#### `clearCache(): void`
-Clear all cached content.
-
-#### `isInitialized(): boolean`
-Check if the service is initialized.
-
-#### `getDID(): string | null`
-Get the client's DID (Decentralized Identifier).
-
-#### `getCacheStats(): { size: number; entries: number }`
-Get cache statistics.
-
-### Helper Functions
-
-#### `createIPFSService(config?: StorachaConfig): Promise<IPFSService>`
-Create and initialize a new IPFS service instance.
-
-#### `getIPFSService(config?: StorachaConfig): Promise<IPFSService>`
-Get or create the default singleton instance.
-
-#### `resetIPFSService(): void`
-Reset the singleton instance (useful for testing).
-
-## Configuration
-
-### StorachaConfig
+### BottleState
 
 ```typescript
 {
-  gatewayUrl?: string;  // Custom IPFS gateway URL (default: https://storacha.link/ipfs)
+  likeCount: number;
+  commentCount: number;
+  currentIpfsHash: string;
 }
 ```
 
-## Error Codes
+## Testing
+
+```bash
+yarn test
+```
+
+The test suite includes:
+- Unit tests for `StateTracker` and `ForeverManager`
+- Integration tests for complete workflows
+- State isolation tests to prevent cross-bottle contamination
+
+## Error Handling
+
+```typescript
+import { IPFSError, IPFSErrorCode } from '@loscolmebrothers/forever-message-ipfs';
+
+try {
+  await ipfs.uploadBottle(message, userId);
+} catch (error) {
+  if (error instanceof IPFSError) {
+    console.error(`IPFS Error (${error.code}):`, error.message);
+  }
+}
+```
+
+### Error Codes
 
 - `INIT_FAILED` - Client initialization failed
 - `UPLOAD_FAILED` - Upload operation failed
 - `FETCH_FAILED` - Content retrieval failed
-- `INVALID_CID` - Invalid content identifier
 - `PARSE_FAILED` - Content parsing/validation failed
 - `NOT_INITIALIZED` - Service not initialized
 - `SPACE_REGISTRATION_FAILED` - Space registration failed
 
-## Environment Setup
-
-For production use, you'll need to set up a Storacha account:
-
-1. Visit [storacha.network](https://storacha.network)
-2. Sign up with your email
-3. Create a space for your application
-4. Use the `login()` method in your app to authenticate
-
-## Integration with React (Separate Project)
-
-This library can be easily integrated into your React app:
-
-```typescript
-// In your React app
-import { getIPFSService } from 'forever-message-ipfs';
-import { useState, useEffect } from 'react';
-
-function MessageForm() {
-  const [ipfs, setIpfs] = useState(null);
-
-  useEffect(() => {
-    getIPFSService().then(setIpfs);
-  }, []);
-
-  const handleSubmit = async (message) => {
-    if (!ipfs) return;
-
-    const result = await ipfs.uploadBottle(message, userId);
-    // Pass result.cid to your smart contract
-    await contract.postMessage(result.cid);
-  };
-
-  // ... rest of component
-}
-```
-
 ## Development
 
 ```bash
-# Install dependencies
 yarn install
-
-# Build the project
 yarn build
-
-# Type check
-yarn typecheck
-
-# Clean build artifacts
+yarn test
 yarn clean
-```
-
-## Architecture
-
-```
-┌─────────────────┐
-│  React App      │
-│  (Separate)     │
-└────────┬────────┘
-         │
-         │ imports
-         ▼
-┌─────────────────┐
-│ IPFS Service    │
-│ (This Library)  │
-└────────┬────────┘
-         │
-         │ uses
-         ▼
-┌─────────────────┐
-│ Storacha Client │
-│ (@storacha)     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ IPFS/Filecoin   │
-│ Network         │
-└─────────────────┘
 ```
 
 ## License
 
-ISC
-
-## Contributing
-
-This is a production library for the Forever Message platform. Ensure all changes:
-- Include TypeScript types
-- Have proper error handling
-- Are backwards compatible
-- Include appropriate documentation
+MIT
