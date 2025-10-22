@@ -9,3 +9,5 @@ export {
 } from "./service";
 
 export { BottleManager, BottleManagerConfig } from "./bottleManager";
+
+export { StateTracker, BottleState } from "./state";

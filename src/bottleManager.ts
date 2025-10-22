@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { IPFSService } from "./service";
+import { StateTracker } from "./state";
 import type { IPFSBottle } from "@loscolmebrothers/forever-message-types";
 
 export interface BottleManagerConfig {
@@ -21,12 +22,7 @@ export class BottleManager {
   private ipfsService: IPFSService;
   private likesThreshold: number;
   private commentsThreshold: number;
-
-  // In-memory cache of current counts (in production, use a database)
-  private bottleCounts: Map<
-    number,
-    { likeCount: number; commentCount: number; currentIpfsHash: string }
-  > = new Map();
+  private state: StateTracker;
 
   constructor(config: BottleManagerConfig) {
     this.contract = new ethers.Contract(
@@ -37,6 +33,7 @@ export class BottleManager {
     this.ipfsService = config.ipfsService;
     this.likesThreshold = config.likesThreshold ?? 100;
     this.commentsThreshold = config.commentsThreshold ?? 4;
+    this.state = new StateTracker();
   }
 
   /**
@@ -45,11 +42,12 @@ export class BottleManager {
   async loadBottleState(bottleId: number, ipfsHash: string): Promise<void> {
     const bottleData = await this.ipfsService.getItem<IPFSBottle>(ipfsHash);
 
-    this.bottleCounts.set(bottleId, {
-      likeCount: bottleData.likeCount ?? 0,
-      commentCount: bottleData.commentCount ?? 0,
-      currentIpfsHash: ipfsHash,
-    });
+    this.state.load(
+      bottleId,
+      ipfsHash,
+      bottleData.likeCount ?? 0,
+      bottleData.commentCount ?? 0,
+    );
   }
 
   /**
@@ -60,23 +58,14 @@ export class BottleManager {
     const tx = await this.contract.likeBottle(bottleId, likerAddress);
     await tx.wait();
 
-    // 2. Get current counts
-    const state = this.bottleCounts.get(bottleId);
-    if (!state) {
-      throw new Error(
-        `Bottle ${bottleId} not loaded. Call loadBottleState first.`,
-      );
-    }
+    // 2. Increment like count
+    this.state.incrementLikes(bottleId);
 
-    // 3. Increment like count
-    const newLikeCount = state.likeCount + 1;
-    state.likeCount = newLikeCount;
+    // 3. Update IPFS metadata with new count
+    await this.updateBottleIPFS(bottleId);
 
-    // 4. Update IPFS metadata with new count
-    await this.updateBottleIPFS(bottleId, state);
-
-    // 5. Check if bottle should become forever
-    await this.checkAndMarkForever(bottleId, state);
+    // 4. Check if bottle should become forever
+    await this.checkAndMarkForever(bottleId);
   }
 
   /**
@@ -87,19 +76,11 @@ export class BottleManager {
     const tx = await this.contract.unlikeBottle(bottleId, unlikerAddress);
     await tx.wait();
 
-    // 2. Get current counts
-    const state = this.bottleCounts.get(bottleId);
-    if (!state) {
-      throw new Error(
-        `Bottle ${bottleId} not loaded. Call loadBottleState first.`,
-      );
-    }
+    // 2. Decrement like count (doesn't go below 0)
+    this.state.decrementLikes(bottleId);
 
-    // 3. Decrement like count (don't go below 0)
-    state.likeCount = Math.max(0, state.likeCount - 1);
-
-    // 4. Update IPFS metadata
-    await this.updateBottleIPFS(bottleId, state);
+    // 3. Update IPFS metadata
+    await this.updateBottleIPFS(bottleId);
   }
 
   /**
@@ -127,22 +108,14 @@ export class BottleManager {
     );
     const commentId = event ? Number(event.args[0]) : 0;
 
-    // 3. Get current state
-    const state = this.bottleCounts.get(bottleId);
-    if (!state) {
-      throw new Error(
-        `Bottle ${bottleId} not loaded. Call loadBottleState first.`,
-      );
-    }
+    // 3. Increment comment count
+    this.state.incrementComments(bottleId);
 
-    // 4. Increment comment count
-    state.commentCount += 1;
+    // 4. Update bottle IPFS metadata
+    await this.updateBottleIPFS(bottleId);
 
-    // 5. Update bottle IPFS metadata
-    await this.updateBottleIPFS(bottleId, state);
-
-    // 6. Check if bottle should become forever
-    await this.checkAndMarkForever(bottleId, state);
+    // 5. Check if bottle should become forever
+    await this.checkAndMarkForever(bottleId);
 
     return commentId;
   }
@@ -150,15 +123,14 @@ export class BottleManager {
   /**
    * Update the bottle's IPFS metadata and update the contract with new hash
    */
-  private async updateBottleIPFS(
-    bottleId: number,
-    state: { likeCount: number; commentCount: number; currentIpfsHash: string },
-  ): Promise<void> {
+  private async updateBottleIPFS(bottleId: number): Promise<void> {
+    const bottleState = this.state.require(bottleId);
+
     // Update metadata in IPFS (creates a new version)
     const newMetadata = await this.ipfsService.updateBottleCounts(
-      state.currentIpfsHash,
-      state.likeCount,
-      state.commentCount,
+      bottleState.currentIpfsHash,
+      bottleState.likeCount,
+      bottleState.commentCount,
     );
 
     // Update the contract with the new IPFS hash
@@ -166,19 +138,18 @@ export class BottleManager {
     await tx.wait();
 
     // Update our local state with the new hash
-    state.currentIpfsHash = newMetadata.cid;
+    this.state.updateIpfsHash(bottleId, newMetadata.cid);
   }
 
   /**
    * Check if bottle meets forever criteria and mark it if so
    */
-  private async checkAndMarkForever(
-    bottleId: number,
-    state: { likeCount: number; commentCount: number },
-  ): Promise<void> {
+  private async checkAndMarkForever(bottleId: number): Promise<void> {
+    const bottleState = this.state.require(bottleId);
+
     if (
-      state.likeCount >= this.likesThreshold &&
-      state.commentCount >= this.commentsThreshold
+      bottleState.likeCount >= this.likesThreshold &&
+      bottleState.commentCount >= this.commentsThreshold
     ) {
       // Check if already marked (to avoid redundant calls)
       const bottle = await this.contract.getBottle(bottleId);
@@ -197,13 +168,7 @@ export class BottleManager {
     likeCount: number;
     commentCount: number;
   } | null {
-    const state = this.bottleCounts.get(bottleId);
-    if (!state) return null;
-
-    return {
-      likeCount: state.likeCount,
-      commentCount: state.commentCount,
-    };
+    return this.state.getCounts(bottleId);
   }
 
   /**
@@ -224,11 +189,7 @@ export class BottleManager {
     const bottleId = event ? Number(event.args[0]) : 0;
 
     // 3. Initialize state tracking
-    this.bottleCounts.set(bottleId, {
-      likeCount: 0,
-      commentCount: 0,
-      currentIpfsHash: uploadResult.cid,
-    });
+    this.state.load(bottleId, uploadResult.cid, 0, 0);
 
     return bottleId;
   }
