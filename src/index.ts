@@ -8,7 +8,7 @@ export {
   CacheEntry,
 } from "./service";
 
-export { StateTracker, BottleState } from "./state";
+export { StateTracker, BottleState } from "./state-tracker";
 
 export { BottleContract, BottleContractConfig } from "./bottle-contract";
 

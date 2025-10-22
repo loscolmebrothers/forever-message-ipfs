@@ -1,4 +1,4 @@
-import { StateTracker } from "./state";
+import { StateTracker } from "./state-tracker";
 import { BottleContract } from "./bottle-contract";
 
 export interface ForeverThresholds {

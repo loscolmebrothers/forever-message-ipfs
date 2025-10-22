@@ -1,0 +1,5 @@
+{
+  "require": "tsx",
+  "extensions": ["ts"],
+  "spec": "test/**/*.test.ts"
+}
