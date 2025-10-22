@@ -6,7 +6,7 @@ export interface ForeverThresholds {
   comments: number;
 }
 
-export class ForeverChecker {
+export class ForeverManager {
   private thresholds: ForeverThresholds;
 
   constructor(
@@ -20,18 +20,23 @@ export class ForeverChecker {
     };
   }
 
-  async checkAndMark(bottleId: number): Promise<void> {
-    const bottleState = this.state.require(bottleId);
+  async promote(bottleId: number): Promise<void> {
+    if (!this.meetsThreshold(bottleId)) {
+      return;
+    }
 
-    if (
+    const bottle = await this.contract.getBottle(bottleId);
+    if (!bottle.isForever) {
+      await this.contract.markBottleAsForever(bottleId);
+      console.log(`Bottle ${bottleId} marked as forever! 🎉`);
+    }
+  }
+
+  private meetsThreshold(bottleId: number): boolean {
+    const bottleState = this.state.get(bottleId);
+    return (
       bottleState.likeCount >= this.thresholds.likes &&
       bottleState.commentCount >= this.thresholds.comments
-    ) {
-      const bottle = await this.contract.getBottle(bottleId);
-      if (!bottle.isForever) {
-        await this.contract.markBottleAsForever(bottleId);
-        console.log(`Bottle ${bottleId} marked as forever! 🎉`);
-      }
-    }
+    );
   }
 }

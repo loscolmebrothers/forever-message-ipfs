@@ -47,8 +47,8 @@ export class BottleContract {
     return event ? Number(event.args[0]) : 0;
   }
 
-  async updateBottleIPFS(bottleId: number, newIpfsHash: string): Promise<void> {
-    const tx = await this.contract.updateBottleIPFS(bottleId, newIpfsHash);
+  async updateBottleIPFS(bottleId: number, newIPFSHash: string): Promise<void> {
+    const tx = await this.contract.updateBottleIPFS(bottleId, newIPFSHash);
     await tx.wait();
   }
 

@@ -10,7 +10,7 @@ export class IPFSCountSync {
   ) {}
 
   async syncBottleCounts(bottleId: number): Promise<void> {
-    const bottleState = this.state.require(bottleId);
+    const bottleState = this.state.get(bottleId);
 
     const newMetadata = await this.ipfsService.updateBottleCounts(
       bottleState.currentIpfsHash,
@@ -20,6 +20,6 @@ export class IPFSCountSync {
 
     await this.contract.updateBottleIPFS(bottleId, newMetadata.cid);
 
-    this.state.updateIpfsHash(bottleId, newMetadata.cid);
+    this.state.updateIPFSHash(bottleId, newMetadata.cid);
   }
 }

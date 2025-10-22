@@ -20,52 +20,34 @@ export class StateTracker {
     });
   }
 
-  get(bottleId: number): BottleState | null {
-    return this.bottles.get(bottleId) || null;
-  }
-
-  require(bottleId: number): BottleState {
+  get(bottleId: number): BottleState {
     const state = this.bottles.get(bottleId);
     if (!state) {
-      throw new Error(
-        `Bottle ${bottleId} not loaded. Call loadBottleState first.`,
-      );
+      throw new Error(`Bottle ${bottleId} not loaded. Call load() first.`);
     }
     return state;
   }
 
   incrementLikes(bottleId: number): number {
-    const state = this.require(bottleId);
+    const state = this.get(bottleId);
     state.likeCount += 1;
     return state.likeCount;
   }
 
   decrementLikes(bottleId: number): number {
-    const state = this.require(bottleId);
+    const state = this.get(bottleId);
     state.likeCount = Math.max(0, state.likeCount - 1);
     return state.likeCount;
   }
 
   incrementComments(bottleId: number): number {
-    const state = this.require(bottleId);
+    const state = this.get(bottleId);
     state.commentCount += 1;
     return state.commentCount;
   }
 
-  updateIpfsHash(bottleId: number, newHash: string): void {
-    const state = this.require(bottleId);
+  updateIPFSHash(bottleId: number, newHash: string): void {
+    const state = this.get(bottleId);
     state.currentIpfsHash = newHash;
-  }
-
-  getCounts(
-    bottleId: number,
-  ): { likeCount: number; commentCount: number } | null {
-    const state = this.bottles.get(bottleId);
-    if (!state) return null;
-
-    return {
-      likeCount: state.likeCount,
-      commentCount: state.commentCount,
-    };
   }
 }

@@ -14,4 +14,4 @@ export { BottleContract, BottleContractConfig } from "./bottle-contract";
 
 export { IPFSCountSync } from "./ipfs-count-sync";
 
-export { ForeverChecker, ForeverThresholds } from "./forever";
+export { ForeverManager, ForeverThresholds } from "./forever-manager";
