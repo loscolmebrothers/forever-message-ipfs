@@ -1,7 +1,7 @@
 {
   "name": "@loscolmebrothers/forever-message-ipfs",
-  "version": "2.0.0",
-  "description": "Production-ready IPFS storage service for Forever Message using Storacha",
+  "version": "3.0.0",
+  "description": "IPFS storage and contract integration for Forever Message platform using Storacha",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
