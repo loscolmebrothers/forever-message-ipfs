@@ -17,8 +17,11 @@ export class BottleContract {
     );
   }
 
-  async createBottle(ipfsHash: string): Promise<number> {
-    const tx = await this.contract.createBottle(ipfsHash);
+  async createBottle(
+    ipfsHash: string,
+    creatorAddress: string,
+  ): Promise<number> {
+    const tx = await this.contract.createBottle(ipfsHash, creatorAddress);
     const receipt = await tx.wait();
 
     const event = receipt.logs.find(
@@ -37,8 +40,16 @@ export class BottleContract {
     await tx.wait();
   }
 
-  async addComment(bottleId: number, commentIpfsHash: string): Promise<number> {
-    const tx = await this.contract.addComment(bottleId, commentIpfsHash);
+  async addComment(
+    bottleId: number,
+    commentIpfsHash: string,
+    commenterAddress: string,
+  ): Promise<number> {
+    const tx = await this.contract.addComment(
+      bottleId,
+      commentIpfsHash,
+      commenterAddress,
+    );
     const receipt = await tx.wait();
 
     const event = receipt.logs.find(
@@ -52,8 +63,16 @@ export class BottleContract {
     await tx.wait();
   }
 
-  async markBottleAsForever(bottleId: number): Promise<void> {
-    const tx = await this.contract.markBottleAsForever(bottleId);
+  async checkIsForever(
+    bottleId: number,
+    likeCount: number,
+    commentCount: number,
+  ): Promise<void> {
+    const tx = await this.contract.checkIsForever(
+      bottleId,
+      likeCount,
+      commentCount,
+    );
     await tx.wait();
   }
 

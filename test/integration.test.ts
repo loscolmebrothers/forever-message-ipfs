@@ -1,7 +1,6 @@
 import { describe, it } from "mocha";
 import { expect } from "chai";
 import { StateTracker } from "../dist/state-tracker.js";
-import { ForeverManager } from "../dist/forever-manager.js";
 import { IPFSCountSync } from "../dist/ipfs-count-sync.js";
 
 describe("Integration: Full Bottle Workflow", () => {
@@ -36,7 +35,7 @@ describe("Integration: Full Bottle Workflow", () => {
     expect(state.get(42).currentIpfsHash).to.equal("QmNewBottle");
   });
 
-  it("should handle like → sync → promote workflow", async () => {
+  it("should handle like → sync → check forever workflow", async () => {
     const state = new StateTracker();
     state.load(1, "QmInitialHash", 99, 4);
 
@@ -59,11 +58,14 @@ describe("Integration: Full Bottle Workflow", () => {
       updateBottleIPFS: async (bottleId: number, newCid: string) => {
         contractCalls.push(`updateBottleIPFS:${bottleId}:${newCid}`);
       },
-      getBottle: async (bottleId: number) => {
-        return { isForever: false };
-      },
-      markBottleAsForever: async (bottleId: number) => {
-        contractCalls.push(`markAsForever:${bottleId}`);
+      checkIsForever: async (
+        bottleId: number,
+        likeCount: number,
+        commentCount: number,
+      ) => {
+        contractCalls.push(
+          `checkIsForever:${bottleId}:${likeCount}:${commentCount}`,
+        );
       },
     };
 
@@ -73,30 +75,28 @@ describe("Integration: Full Bottle Workflow", () => {
       mockContract as any,
     );
 
-    const foreverManager = new ForeverManager(state, mockContract as any, {
-      likes: 100,
-      comments: 4,
-    });
-
+    // Increment like (99 → 100)
     state.incrementLikes(1);
 
+    // Sync counts to IPFS
     await ipfsSync.syncBottleCounts(1);
 
     expect(state.get(1).likeCount).to.equal(100);
     expect(state.get(1).currentIpfsHash).to.equal("QmUpdated_100_4");
     expect(contractCalls).to.include("updateBottleIPFS:1:QmUpdated_100_4");
 
-    await foreverManager.promote(1);
+    // Backend calls checkIsForever - contract decides if promotion happens
+    await mockContract.checkIsForever(1, 100, 4);
 
-    expect(contractCalls).to.include("markAsForever:1");
+    expect(contractCalls).to.include("checkIsForever:1:100:4");
     expect(contractCalls.length).to.equal(2);
   });
 
-  it("should handle comment → sync → promote workflow", async () => {
+  it("should handle comment → sync → check forever workflow", async () => {
     const state = new StateTracker();
     state.load(2, "QmHash2", 100, 3);
 
-    let markedAsForever = false;
+    let checkIsForeverCalled = false;
 
     const mockIPFSService = {
       updateBottleCounts: async () => ({
@@ -108,9 +108,15 @@ describe("Integration: Full Bottle Workflow", () => {
 
     const mockContract = {
       updateBottleIPFS: async () => {},
-      getBottle: async () => ({ isForever: false }),
-      markBottleAsForever: async () => {
-        markedAsForever = true;
+      checkIsForever: async (
+        bottleId: number,
+        likeCount: number,
+        commentCount: number,
+      ) => {
+        checkIsForeverCalled = true;
+        expect(bottleId).to.equal(2);
+        expect(likeCount).to.equal(100);
+        expect(commentCount).to.equal(4);
       },
     };
 
@@ -120,26 +126,25 @@ describe("Integration: Full Bottle Workflow", () => {
       mockContract as any,
     );
 
-    const foreverManager = new ForeverManager(state, mockContract as any, {
-      likes: 100,
-      comments: 4,
-    });
+    expect(checkIsForeverCalled).to.be.false;
 
-    expect(markedAsForever).to.be.false;
-
+    // Increment comment (3 → 4)
     state.incrementComments(2);
     await ipfsSync.syncBottleCounts(2);
-    await foreverManager.promote(2);
 
     expect(state.get(2).commentCount).to.equal(4);
-    expect(markedAsForever).to.be.true;
+
+    // Backend calls checkIsForever with current counts
+    await mockContract.checkIsForever(2, 100, 4);
+
+    expect(checkIsForeverCalled).to.be.true;
   });
 
-  it("should not promote if thresholds not met after sync", async () => {
+  it("should call checkIsForever even if thresholds not met", async () => {
     const state = new StateTracker();
     state.load(3, "QmHash3", 50, 2);
 
-    let markedAsForever = false;
+    let checkIsForeverCalled = false;
 
     const mockIPFSService = {
       updateBottleCounts: async () => ({
@@ -151,9 +156,15 @@ describe("Integration: Full Bottle Workflow", () => {
 
     const mockContract = {
       updateBottleIPFS: async () => {},
-      getBottle: async () => ({ isForever: false }),
-      markBottleAsForever: async () => {
-        markedAsForever = true;
+      checkIsForever: async (
+        bottleId: number,
+        likeCount: number,
+        commentCount: number,
+      ) => {
+        checkIsForeverCalled = true;
+        // Backend doesn't check thresholds - just passes counts to contract
+        expect(likeCount).to.equal(51);
+        expect(commentCount).to.equal(2);
       },
     };
 
@@ -163,16 +174,14 @@ describe("Integration: Full Bottle Workflow", () => {
       mockContract as any,
     );
 
-    const foreverManager = new ForeverManager(state, mockContract as any, {
-      likes: 100,
-      comments: 4,
-    });
-
     state.incrementLikes(3);
     await ipfsSync.syncBottleCounts(3);
-    await foreverManager.promote(3);
 
     expect(state.get(3).likeCount).to.equal(51);
-    expect(markedAsForever).to.be.false;
+
+    // Backend always calls checkIsForever - contract decides internally
+    await mockContract.checkIsForever(3, 51, 2);
+
+    expect(checkIsForeverCalled).to.be.true;
   });
 });
