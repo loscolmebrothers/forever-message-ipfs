@@ -2,6 +2,14 @@ import { IPFSService } from "./service";
 import { StateTracker } from "./state-tracker";
 import { BottleContract } from "./bottle-contract";
 
+/**
+ * Syncs comment count to IPFS when a bottle is promoted to "forever" status
+ *
+ * NOTE: likeCount is NOT synced to IPFS - it's managed in Supabase
+ * Only commentCount is synced because:
+ * - Comments are capped at 4/user (low volume, worth storing)
+ * - Likes are unlimited (high volume, stored in Supabase)
+ */
 export class IPFSCountSync {
   constructor(
     private ipfsService: IPFSService,
@@ -9,12 +17,12 @@ export class IPFSCountSync {
     private contract: BottleContract,
   ) {}
 
-  async syncBottleCounts(bottleId: number): Promise<void> {
+  async syncBottleCommentCount(bottleId: number): Promise<void> {
     const bottleState = this.state.get(bottleId);
 
-    const newMetadata = await this.ipfsService.updateBottleCounts(
+    // Only sync commentCount - likeCount managed in Supabase
+    const newMetadata = await this.ipfsService.updateBottleCommentCount(
       bottleState.currentIpfsHash,
-      bottleState.likeCount,
       bottleState.commentCount,
     );
 

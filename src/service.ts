@@ -27,9 +27,8 @@ export interface IIPFSService {
     bottleId: number,
     userId: string,
   ): Promise<UploadResult>;
-  updateBottleCounts(
+  updateBottleCommentCount(
     originalCid: string,
-    likeCount: number,
     commentCount: number,
   ): Promise<UploadResult>;
   getItem<T extends IPFSItem>(cid: string): Promise<T>;
@@ -106,16 +105,15 @@ export class IPFSService implements IIPFSService {
       userId,
       timestamp,
       createdAt: new Date().toISOString(),
-      likeCount: 0,
       commentCount: 0,
+      // likeCount removed - Supabase is source of truth for likes
     };
 
     return this.uploadJSON(bottleData);
   }
 
-  async updateBottleCounts(
+  async updateBottleCommentCount(
     originalCid: string,
-    likeCount: number,
     commentCount: number,
   ): Promise<UploadResult> {
     this.ensureInitialized();
@@ -131,7 +129,6 @@ export class IPFSService implements IIPFSService {
 
     const updatedBottle: IPFSBottle = {
       ...originalBottle,
-      likeCount,
       commentCount,
     };
 

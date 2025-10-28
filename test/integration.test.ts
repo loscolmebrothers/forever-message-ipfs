@@ -43,13 +43,12 @@ describe("Integration: Full Bottle Workflow", () => {
     let currentIpfsHash = "QmInitialHash";
 
     const mockIPFSService = {
-      updateBottleCounts: async (
+      updateBottleCommentCount: async (
         originalCid: string,
-        likeCount: number,
         commentCount: number,
       ) => {
         expect(originalCid).to.equal(currentIpfsHash);
-        currentIpfsHash = `QmUpdated_${likeCount}_${commentCount}`;
+        currentIpfsHash = `QmUpdated_${commentCount}`;
         return { cid: currentIpfsHash, size: 100, url: "https://..." };
       },
     };
@@ -78,12 +77,12 @@ describe("Integration: Full Bottle Workflow", () => {
     // Increment like (99 → 100)
     state.incrementLikes(1);
 
-    // Sync counts to IPFS
-    await ipfsSync.syncBottleCounts(1);
+    // Sync comment count to IPFS (likeCount no longer synced)
+    await ipfsSync.syncBottleCommentCount(1);
 
     expect(state.get(1).likeCount).to.equal(100);
-    expect(state.get(1).currentIpfsHash).to.equal("QmUpdated_100_4");
-    expect(contractCalls).to.include("updateBottleIPFS:1:QmUpdated_100_4");
+    expect(state.get(1).currentIpfsHash).to.equal("QmUpdated_4");
+    expect(contractCalls).to.include("updateBottleIPFS:1:QmUpdated_4");
 
     // Backend calls checkIsForever - contract decides if promotion happens
     await mockContract.checkIsForever(1, 100, 4);
@@ -99,7 +98,7 @@ describe("Integration: Full Bottle Workflow", () => {
     let checkIsForeverCalled = false;
 
     const mockIPFSService = {
-      updateBottleCounts: async () => ({
+      updateBottleCommentCount: async () => ({
         cid: "QmNewHash",
         size: 100,
         url: "https://...",
@@ -130,7 +129,7 @@ describe("Integration: Full Bottle Workflow", () => {
 
     // Increment comment (3 → 4)
     state.incrementComments(2);
-    await ipfsSync.syncBottleCounts(2);
+    await ipfsSync.syncBottleCommentCount(2);
 
     expect(state.get(2).commentCount).to.equal(4);
 
@@ -147,7 +146,7 @@ describe("Integration: Full Bottle Workflow", () => {
     let checkIsForeverCalled = false;
 
     const mockIPFSService = {
-      updateBottleCounts: async () => ({
+      updateBottleCommentCount: async () => ({
         cid: "QmNewHash",
         size: 100,
         url: "https://...",
@@ -175,7 +174,7 @@ describe("Integration: Full Bottle Workflow", () => {
     );
 
     state.incrementLikes(3);
-    await ipfsSync.syncBottleCounts(3);
+    await ipfsSync.syncBottleCommentCount(3);
 
     expect(state.get(3).likeCount).to.equal(51);
 
@@ -313,12 +312,8 @@ describe("Integration: Multi-User Scenarios", () => {
         size: 100,
         url: "https://...",
       }),
-      updateBottleCounts: async (
-        cid: string,
-        likes: number,
-        comments: number,
-      ) => ({
-        cid: `QmUpdated_${likes}_${comments}`,
+      updateBottleCommentCount: async (cid: string, comments: number) => ({
+        cid: `QmUpdated_${comments}`,
         size: 100,
         url: "https://...",
       }),
@@ -358,7 +353,7 @@ describe("Integration: Multi-User Scenarios", () => {
       state.incrementComments(bottleId);
     }
 
-    await ipfsSync.syncBottleCounts(bottleId);
+    await ipfsSync.syncBottleCommentCount(bottleId);
     await mockContract.checkIsForever(
       bottleId,
       state.get(bottleId).likeCount,
@@ -368,7 +363,7 @@ describe("Integration: Multi-User Scenarios", () => {
     expect(state.get(bottleId).likeCount).to.equal(100);
     expect(state.get(bottleId).commentCount).to.equal(4);
     expect(promotedBottle).to.equal(1);
-    expect(state.get(bottleId).currentIpfsHash).to.equal("QmUpdated_100_4");
+    expect(state.get(bottleId).currentIpfsHash).to.equal("QmUpdated_4");
   });
 
   it("should verify creator and commenter addresses are passed correctly", async () => {
