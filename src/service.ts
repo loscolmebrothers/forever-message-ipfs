@@ -1,4 +1,7 @@
 import * as Client from "@storacha/client";
+import { StoreMemory } from "@storacha/client/stores/memory";
+import * as Proof from "@storacha/client/proof";
+import { Signer } from "@storacha/client/principal/ed25519";
 import {
   IPFSBottle,
   IPFSComment,
@@ -9,7 +12,8 @@ import {
 } from "@loscolmebrothers/forever-message-types";
 
 export interface StorachaConfig {
-  spaceDID?: string;
+  principalKey: string;
+  proof: string;
   gatewayUrl?: string;
 }
 
@@ -42,12 +46,14 @@ export class IPFSService implements IIPFSService {
   private cache: Map<string, CacheEntry<IPFSItem>> = new Map();
   private cacheExpirationMs: number;
   private initialized: boolean = false;
-  private spaceDID?: string;
+  private principalKey: string;
+  private proof: string;
 
-  constructor(config: StorachaConfig = {}) {
+  constructor(config: StorachaConfig) {
+    this.principalKey = config.principalKey;
+    this.proof = config.proof;
     this.gatewayUrl = config.gatewayUrl || "https://storacha.link/ipfs";
     this.cacheExpirationMs = 5 * 60 * 1000;
-    this.spaceDID = config.spaceDID;
   }
 
   async initialize(): Promise<void> {
@@ -56,30 +62,19 @@ export class IPFSService implements IIPFSService {
     }
 
     try {
-      this.client = await Client.create();
+      const principal = Signer.parse(this.principalKey);
+      const store = new StoreMemory();
+      this.client = await Client.create({ principal, store });
 
-      if (this.spaceDID) {
-        await this.client.setCurrentSpace(this.spaceDID as `did:key:${string}`);
-      }
+      const proof = await Proof.parse(this.proof);
+      const space = await this.client.addSpace(proof);
+      await this.client.setCurrentSpace(space.did());
 
       this.initialized = true;
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.INIT_FAILED,
-        "Failed to initialize Storacha client",
-        error instanceof Error ? error : undefined,
-      );
-    }
-  }
-
-  async login(email: string): Promise<void> {
-    try {
-      this.ensureInitialized();
-      await this.client!.login(email as `${string}@${string}`);
-    } catch (error) {
-      throw new IPFSError(
-        IPFSErrorCode.SPACE_REGISTRATION_FAILED,
-        `Failed to login with email: ${email}`,
+        "Failed to initialize Storacha client. Check STORACHA_PRINCIPAL_KEY and STORACHA_PROOF.",
         error instanceof Error ? error : undefined,
       );
     }
@@ -87,12 +82,6 @@ export class IPFSService implements IIPFSService {
 
   isInitialized(): boolean {
     return this.initialized;
-  }
-
-  getDID(): string | null {
-    this.ensureInitialized();
-
-    return this.client!.did();
   }
 
   async uploadBottle(message: string, userId: string): Promise<UploadResult> {
@@ -299,7 +288,7 @@ export class IPFSService implements IIPFSService {
 }
 
 export async function createIPFSService(
-  config: StorachaConfig = {},
+  config: StorachaConfig,
 ): Promise<IPFSService> {
   const service = new IPFSService(config);
   await service.initialize();
@@ -309,7 +298,7 @@ export async function createIPFSService(
 let defaultInstance: IPFSService | null = null;
 
 export async function getIPFSService(
-  config: StorachaConfig = {},
+  config: StorachaConfig,
 ): Promise<IPFSService> {
   if (!defaultInstance) {
     defaultInstance = await createIPFSService(config);
