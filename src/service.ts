@@ -4,7 +4,6 @@ import * as Proof from "@storacha/client/proof";
 import { Signer } from "@storacha/client/principal/ed25519";
 import {
   IPFSBottle,
-  IPFSComment,
   IPFSItem,
   UploadResult,
   IPFSError,
@@ -26,15 +25,6 @@ export interface CacheEntry<T> {
 export interface IIPFSService {
   initialize(): Promise<void>;
   uploadBottle(message: string, userId: string): Promise<UploadResult>;
-  uploadComment(
-    message: string,
-    bottleId: number,
-    userId: string,
-  ): Promise<UploadResult>;
-  updateBottleCommentCount(
-    originalCid: string,
-    commentCount: number,
-  ): Promise<UploadResult>;
   getItem<T extends IPFSItem>(cid: string): Promise<T>;
   isInitialized(): boolean;
   clearCache(): void;
@@ -94,55 +84,10 @@ export class IPFSService implements IIPFSService {
       userId,
       timestamp,
       createdAt: new Date().toISOString(),
-      commentCount: 0,
       // likeCount removed - Supabase is source of truth for likes
     };
 
     return this.uploadJSON(bottleData);
-  }
-
-  async updateBottleCommentCount(
-    originalCid: string,
-    commentCount: number,
-  ): Promise<UploadResult> {
-    this.ensureInitialized();
-
-    const originalBottle = await this.getItem<IPFSBottle>(originalCid);
-
-    if (originalBottle.type !== "bottle") {
-      throw new IPFSError(
-        IPFSErrorCode.PARSE_FAILED,
-        "CID does not point to a bottle",
-      );
-    }
-
-    const updatedBottle: IPFSBottle = {
-      ...originalBottle,
-      commentCount,
-    };
-
-    this.cache.delete(originalCid);
-    return this.uploadJSON(updatedBottle);
-  }
-
-  async uploadComment(
-    message: string,
-    bottleId: number,
-    userId: string,
-  ): Promise<UploadResult> {
-    this.ensureInitialized();
-
-    const timestamp = Math.floor(Date.now() / 1000);
-    const commentData: IPFSComment = {
-      message,
-      type: "comment",
-      bottleId,
-      userId,
-      timestamp,
-      createdAt: new Date().toISOString(),
-    };
-
-    return this.uploadJSON(commentData);
   }
 
   private async uploadJSON(data: IPFSItem): Promise<UploadResult> {
@@ -219,10 +164,10 @@ export class IPFSService implements IIPFSService {
       );
     }
 
-    if (record.type !== "bottle" && record.type !== "comment") {
+    if (record.type !== "bottle") {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
-        'Invalid data: type must be "bottle" or "comment"',
+        'Invalid data: type must be "bottle"',
       );
     }
 
@@ -237,13 +182,6 @@ export class IPFSService implements IIPFSService {
       throw new IPFSError(
         IPFSErrorCode.PARSE_FAILED,
         'Invalid data: missing or invalid "timestamp" field',
-      );
-    }
-
-    if (record.type === "comment" && typeof record.bottleId !== "number") {
-      throw new IPFSError(
-        IPFSErrorCode.PARSE_FAILED,
-        'Invalid data: comment missing "bottleId" field',
       );
     }
   }

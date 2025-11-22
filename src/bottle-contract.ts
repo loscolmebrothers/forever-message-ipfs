@@ -40,24 +40,6 @@ export class BottleContract {
     await tx.wait();
   }
 
-  async addComment(
-    bottleId: number,
-    commentIpfsHash: string,
-    commenterAddress: string,
-  ): Promise<number> {
-    const tx = await this.contract.addComment(
-      bottleId,
-      commentIpfsHash,
-      commenterAddress,
-    );
-    const receipt = await tx.wait();
-
-    const event = receipt.logs.find(
-      (log: any) => log.fragment?.name === "CommentAdded",
-    );
-    return event ? Number(event.args[0]) : 0;
-  }
-
   async updateBottleIPFS(bottleId: number, newIPFSHash: string): Promise<void> {
     const tx = await this.contract.updateBottleIPFS(bottleId, newIPFSHash);
     await tx.wait();
@@ -66,12 +48,10 @@ export class BottleContract {
   async checkIsForever(
     bottleId: number,
     likeCount: number,
-    commentCount: number,
   ): Promise<void> {
     const tx = await this.contract.checkIsForever(
       bottleId,
       likeCount,
-      commentCount,
     );
     await tx.wait();
   }

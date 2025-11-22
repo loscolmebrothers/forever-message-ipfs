@@ -11,5 +11,3 @@ export {
 export { StateTracker, BottleState } from "./state-tracker";
 
 export { BottleContract, BottleContractConfig } from "./bottle-contract";
-
-export { IPFSCountSync } from "./ipfs-count-sync";

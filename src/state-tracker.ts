@@ -1,6 +1,5 @@
 export interface BottleState {
   likeCount: number;
-  commentCount: number;
   currentIpfsHash: string;
 }
 
@@ -11,11 +10,9 @@ export class StateTracker {
     bottleId: number,
     ipfsHash: string,
     likeCount: number,
-    commentCount: number,
   ): void {
     this.bottles.set(bottleId, {
       likeCount,
-      commentCount,
       currentIpfsHash: ipfsHash,
     });
   }
@@ -38,12 +35,6 @@ export class StateTracker {
     const state = this.get(bottleId);
     state.likeCount = Math.max(0, state.likeCount - 1);
     return state.likeCount;
-  }
-
-  incrementComments(bottleId: number): number {
-    const state = this.get(bottleId);
-    state.commentCount += 1;
-    return state.commentCount;
   }
 
   updateIPFSHash(bottleId: number, newHash: string): void {
