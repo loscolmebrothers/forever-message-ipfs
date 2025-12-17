@@ -20,14 +20,15 @@ export class BottleContract {
   async createBottle(
     ipfsHash: string,
     creatorAddress: string,
-  ): Promise<number> {
+  ): Promise<{ bottleId: number; transactionHash: string }> {
     const tx = await this.contract.createBottle(ipfsHash, creatorAddress);
     const receipt = await tx.wait();
 
     const event = receipt.logs.find(
       (log: any) => log.fragment?.name === "BottleCreated",
     );
-    return event ? Number(event.args[0]) : 0;
+    const bottleId = event ? Number(event.args[0]) : 0;
+    return { bottleId, transactionHash: receipt.hash };
   }
 
   async likeBottle(bottleId: number, likerAddress: string): Promise<void> {
