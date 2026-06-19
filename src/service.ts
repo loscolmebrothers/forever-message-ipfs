@@ -1,7 +1,4 @@
-import * as Client from "@storacha/client";
-import { StoreMemory } from "@storacha/client/stores/memory";
-import * as Proof from "@storacha/client/proof";
-import { Signer } from "@storacha/client/principal/ed25519";
+import lighthouse from "@lighthouse-web3/sdk";
 import {
   IPFSBottle,
   IPFSItem,
@@ -10,9 +7,8 @@ import {
   IPFSErrorCode,
 } from "@loscolmebrothers/forever-message-types";
 
-export interface StorachaConfig {
-  principalKey: string;
-  proof: string;
+export interface LighthouseConfig {
+  apiKey: string;
   gatewayUrl?: string;
 }
 
@@ -31,18 +27,16 @@ export interface IIPFSService {
 }
 
 export class IPFSService implements IIPFSService {
-  private client: Client.Client | null = null;
+  private apiKey: string;
   private gatewayUrl: string;
   private cache: Map<string, CacheEntry<IPFSItem>> = new Map();
   private cacheExpirationMs: number;
   private initialized: boolean = false;
-  private principalKey: string;
-  private proof: string;
 
-  constructor(config: StorachaConfig) {
-    this.principalKey = config.principalKey;
-    this.proof = config.proof;
-    this.gatewayUrl = config.gatewayUrl || "https://storacha.link/ipfs";
+  constructor(config: LighthouseConfig) {
+    this.apiKey = config.apiKey;
+    this.gatewayUrl =
+      config.gatewayUrl || "https://gateway.lighthouse.storage/ipfs";
     this.cacheExpirationMs = 5 * 60 * 1000;
   }
 
@@ -52,19 +46,17 @@ export class IPFSService implements IIPFSService {
     }
 
     try {
-      const principal = Signer.parse(this.principalKey);
-      const store = new StoreMemory();
-      this.client = await Client.create({ principal, store });
-
-      const proof = await Proof.parse(this.proof);
-      const space = await this.client.addSpace(proof);
-      await this.client.setCurrentSpace(space.did());
+      // Lighthouse doesn't need complex initialization like Storacha
+      // Just validate API key exists
+      if (!this.apiKey || this.apiKey.length < 10) {
+        throw new Error("Invalid Lighthouse API key");
+      }
 
       this.initialized = true;
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.INIT_FAILED,
-        "Failed to initialize Storacha client. Check STORACHA_PRINCIPAL_KEY and STORACHA_PROOF.",
+        "Failed to initialize Lighthouse client. Check LIGHTHOUSE_API_KEY.",
         error instanceof Error ? error : undefined,
       );
     }
@@ -84,7 +76,6 @@ export class IPFSService implements IIPFSService {
       userId,
       timestamp,
       createdAt: new Date().toISOString(),
-      // likeCount removed - Supabase is source of truth for likes
     };
 
     return this.uploadJSON(bottleData);
@@ -95,22 +86,23 @@ export class IPFSService implements IIPFSService {
 
     try {
       const jsonString = JSON.stringify(data);
-      const blob = new Blob([jsonString], { type: "application/json" });
-      const file = new File([blob], "data.json", { type: "application/json" });
 
-      const cid = await this.client!.uploadFile(file);
+      // Upload to Lighthouse as text
+      const response = await lighthouse.uploadText(jsonString, this.apiKey);
+
+      const cid = response.data.Hash;
       const size = new TextEncoder().encode(jsonString).length;
       const url = `${this.gatewayUrl}/${cid}`;
 
       return {
-        cid: cid.toString(),
+        cid,
         size,
         url,
       };
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.UPLOAD_FAILED,
-        "Failed to upload data to IPFS",
+        "Failed to upload data to IPFS via Lighthouse",
         error instanceof Error ? error : undefined,
       );
     }
@@ -216,7 +208,7 @@ export class IPFSService implements IIPFSService {
   }
 
   private ensureInitialized(): void {
-    if (!this.initialized || !this.client) {
+    if (!this.initialized) {
       throw new IPFSError(
         IPFSErrorCode.NOT_INITIALIZED,
         "IPFS Service not initialized. Call initialize() first.",
@@ -226,7 +218,7 @@ export class IPFSService implements IIPFSService {
 }
 
 export async function createIPFSService(
-  config: StorachaConfig,
+  config: LighthouseConfig,
 ): Promise<IPFSService> {
   const service = new IPFSService(config);
   await service.initialize();
@@ -236,7 +228,7 @@ export async function createIPFSService(
 let defaultInstance: IPFSService | null = null;
 
 export async function getIPFSService(
-  config: StorachaConfig,
+  config: LighthouseConfig,
 ): Promise<IPFSService> {
   if (!defaultInstance) {
     defaultInstance = await createIPFSService(config);
