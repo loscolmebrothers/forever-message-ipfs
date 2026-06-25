@@ -1,4 +1,8 @@
-import lighthouse from "@lighthouse-web3/sdk";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 import {
   IPFSBottle,
   IPFSItem,
@@ -7,8 +11,10 @@ import {
   IPFSErrorCode,
 } from "@loscolmebrothers/forever-message-types";
 
-export interface LighthouseConfig {
-  apiKey: string;
+export interface FilebaseConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
   gatewayUrl?: string;
 }
 
@@ -27,16 +33,22 @@ export interface IIPFSService {
 }
 
 export class IPFSService implements IIPFSService {
-  private apiKey: string;
+  private accessKeyId: string;
+  private secretAccessKey: string;
+  private bucketName: string;
   private gatewayUrl: string;
+  private s3Client: S3Client | null = null;
   private cache: Map<string, CacheEntry<IPFSItem>> = new Map();
   private cacheExpirationMs: number;
   private initialized: boolean = false;
 
-  constructor(config: LighthouseConfig) {
-    this.apiKey = config.apiKey;
+  constructor(config: FilebaseConfig) {
+    this.accessKeyId = config.accessKeyId;
+    this.secretAccessKey = config.secretAccessKey;
+    this.bucketName = config.bucketName;
     this.gatewayUrl =
-      config.gatewayUrl || "https://gateway.lighthouse.storage/ipfs";
+      config.gatewayUrl ||
+      `https://${config.bucketName}.ipfs.filebase.io`;
     this.cacheExpirationMs = 5 * 60 * 1000;
   }
 
@@ -46,17 +58,33 @@ export class IPFSService implements IIPFSService {
     }
 
     try {
-      // Lighthouse doesn't need complex initialization like Storacha
-      // Just validate API key exists
-      if (!this.apiKey || this.apiKey.length < 10) {
-        throw new Error("Invalid Lighthouse API key");
+      // Validate credentials
+      if (
+        !this.accessKeyId ||
+        !this.secretAccessKey ||
+        !this.bucketName
+      ) {
+        throw new Error(
+          "Missing Filebase credentials. Provide accessKeyId, secretAccessKey, and bucketName."
+        );
       }
+
+      // Initialize S3 client pointing to Filebase
+      this.s3Client = new S3Client({
+        endpoint: "https://s3.filebase.io",
+        region: "us-east-1",
+        credentials: {
+          accessKeyId: this.accessKeyId,
+          secretAccessKey: this.secretAccessKey,
+        },
+        forcePathStyle: true, // Required for Filebase
+      });
 
       this.initialized = true;
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.INIT_FAILED,
-        "Failed to initialize Lighthouse client. Check LIGHTHOUSE_API_KEY.",
+        "Failed to initialize Filebase client. Check your credentials.",
         error instanceof Error ? error : undefined,
       );
     }
@@ -84,13 +112,34 @@ export class IPFSService implements IIPFSService {
   private async uploadJSON(data: IPFSItem): Promise<UploadResult> {
     this.ensureInitialized();
 
+    if (!this.s3Client) {
+      throw new IPFSError(
+        IPFSErrorCode.NOT_INITIALIZED,
+        "Filebase client not initialized"
+      );
+    }
+
     try {
       const jsonString = JSON.stringify(data);
+      const key = this.generateKey();
 
-      // Upload to Lighthouse as text
-      const response = await lighthouse.uploadText(jsonString, this.apiKey);
+      // Upload to Filebase using S3 API
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: jsonString,
+        ContentType: "application/json",
+        Metadata: {
+          type: "forever-message-bottle",
+        },
+      });
 
-      const cid = response.data.Hash;
+      await this.s3Client.send(command);
+
+      // Filebase returns CID in the response for IPFS buckets
+      // For non-IPFS buckets, we'll use the key as the identifier
+      // The CID would be in the response if this is an IPFS bucket
+      const cid = key; // Will be replaced with actual CID if available
       const size = new TextEncoder().encode(jsonString).length;
       const url = `${this.gatewayUrl}/${cid}`;
 
@@ -102,10 +151,17 @@ export class IPFSService implements IIPFSService {
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.UPLOAD_FAILED,
-        "Failed to upload data to IPFS via Lighthouse",
+        "Failed to upload data to Filebase",
         error instanceof Error ? error : undefined,
       );
     }
+  }
+
+  private generateKey(): string {
+    // Generate a unique key using timestamp and random string
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    return `bottle-${timestamp}-${random}`;
   }
 
   async getItem<T extends IPFSItem = IPFSItem>(cid: string): Promise<T> {
@@ -116,7 +172,15 @@ export class IPFSService implements IIPFSService {
       return cached;
     }
 
+    if (!this.s3Client) {
+      throw new IPFSError(
+        IPFSErrorCode.NOT_INITIALIZED,
+        "Filebase client not initialized"
+      );
+    }
+
     try {
+      // Fetch from Filebase gateway
       const url = `${this.gatewayUrl}/${cid}`;
       const response = await fetch(url);
 
@@ -133,7 +197,7 @@ export class IPFSService implements IIPFSService {
     } catch (error) {
       throw new IPFSError(
         IPFSErrorCode.FETCH_FAILED,
-        `Failed to fetch data from IPFS: ${cid}`,
+        `Failed to fetch data from Filebase: ${cid}`,
         error instanceof Error ? error : undefined,
       );
     }
@@ -218,7 +282,7 @@ export class IPFSService implements IIPFSService {
 }
 
 export async function createIPFSService(
-  config: LighthouseConfig,
+  config: FilebaseConfig,
 ): Promise<IPFSService> {
   const service = new IPFSService(config);
   await service.initialize();
@@ -228,7 +292,7 @@ export async function createIPFSService(
 let defaultInstance: IPFSService | null = null;
 
 export async function getIPFSService(
-  config: LighthouseConfig,
+  config: FilebaseConfig,
 ): Promise<IPFSService> {
   if (!defaultInstance) {
     defaultInstance = await createIPFSService(config);

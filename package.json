@@ -1,42 +1,9 @@
 {
-  "name": "@loscolmebrothers/forever-message-ipfs",
-  "version": "7.0.1",
-  "description": "IPFS storage and contract integration for Forever Message platform using Filebase",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist",
-    "test": "yarn build && mocha"
-  },
-  "keywords": [
-    "ipfs",
-    "filebase",
-    "web3",
-    "storage",
-    "decentralized",
-    "forever-message"
-  ],
-  "author": "LOS COLMEBROTHERS",
-  "license": "MIT",
   "type": "module",
-  "files": [
-    "dist/**/*"
-  ],
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.1073.0",
-    "@aws-sdk/s3-request-presigner": "^3.1073.0",
-    "@loscolmebrothers/forever-message-types": "^4.0.0",
-    "ethers": "^6.13.4"
-  },
-  "devDependencies": {
-    "@types/chai": "^4.3.20",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.18.11",
-    "chai": "^5.3.3",
-    "mocha": "^11.7.4",
-    "tsx": "^4.19.2",
-    "typescript": "^5.0.0"
+  "exports": {
+    "./dist/ipfs": {
+      "import": "./dist/ipfs.js",
+      "default": "./dist/ipfs.js"
+    }
   }
 }

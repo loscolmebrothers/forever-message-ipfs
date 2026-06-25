@@ -1,11 +1,11 @@
 # Forever Message - IPFS Storage & Contract Integration
 
-IPFS storage service and smart contract integration for Forever Message platform. Provides modular components for managing bottle state, IPFS synchronization, and contract interactions using Storacha.
+IPFS storage service and smart contract integration for Forever Message platform. Provides modular components for managing bottle state, IPFS synchronization, and contract interactions using Filebase.
 
 ## Overview
 
 This package provides the bridge between decentralized storage (IPFS) and blockchain (smart contract):
-- **IPFSService**: Upload/retrieve content from IPFS via Storacha
+- **IPFSService**: Upload/retrieve content from IPFS via Filebase
 - **StateTracker**: Manage in-memory bottle state (likes, comments, IPFS hash)
 - **BottleContract**: Type-safe wrapper for all smart contract interactions
 - **IPFSCountSync**: Synchronize engagement counts between state, IPFS, and contract
@@ -25,6 +25,17 @@ This package provides the bridge between decentralized storage (IPFS) and blockc
 3. Contract checks thresholds (100 likes + 4 comments)
 4. Contract promotes to forever if eligible
 5. Backend is ignorant of thresholds (contract = source of truth)
+
+### Why Filebase?
+
+Filebase provides:
+- **5 GB free storage** (5x more than Pinata)
+- **Unlimited bandwidth/egress** (no caps on downloads)
+- **S3-compatible API** (well-documented, familiar)
+- **500 requests/second** rate limit (very generous)
+- **100K uploads/month** included in free tier
+
+Perfect for Forever Message's text-only bottle use case!
 
 ## Installation
 
@@ -56,8 +67,10 @@ yarn clean
 import { createIPFSService } from '@loscolmebrothers/forever-message-ipfs';
 
 const ipfs = await createIPFSService({
-  spaceDID: process.env.STORACHA_SPACE_DID,
-  gatewayUrl: 'https://storacha.link/ipfs'
+  accessKeyId: process.env.FILEBASE_ACCESS_KEY_ID,
+  secretAccessKey: process.env.FILEBASE_SECRET_ACCESS_KEY,
+  bucketName: process.env.FILEBASE_BUCKET_NAME,
+  gatewayUrl: 'https://your-bucket.ipfs.filebase.io'
 });
 
 const result = await ipfs.uploadBottle('Hello World!', 'user123');
@@ -128,8 +141,10 @@ import {
 } from '@loscolmebrothers/forever-message-ipfs';
 import { ethers } from 'ethers';
 
-const ipfs = await createIPFSService({ 
-  spaceDID: process.env.STORACHA_SPACE_DID 
+const ipfs = await createIPFSService({
+  accessKeyId: process.env.FILEBASE_ACCESS_KEY_ID,
+  secretAccessKey: process.env.FILEBASE_SECRET_ACCESS_KEY,
+  bucketName: process.env.FILEBASE_BUCKET_NAME
 });
 const state = new StateTracker();
 
@@ -155,7 +170,7 @@ state.incrementLikes(bottleId);
 await ipfsSync.syncBottleCounts(bottleId);
 
 await contract.checkIsForever(
-  bottleId, 
+  bottleId,
   state.get(bottleId).likeCount,
   state.get(bottleId).commentCount
 );
@@ -169,7 +184,7 @@ await contract.checkIsForever(
 
 ```typescript
 await ipfs.initialize()
-// Initialize Storacha client
+// Initialize Filebase client
 
 await ipfs.uploadBottle(message: string, userId: string): Promise<UploadResult>
 // Upload bottle content to IPFS
@@ -360,7 +375,7 @@ try {
 } catch (error) {
   if (error instanceof IPFSError) {
     console.error(`IPFS Error (${error.code}):`, error.message);
-    
+
     switch (error.code) {
       case IPFSErrorCode.INIT_FAILED:
         // Handle initialization failure
@@ -383,7 +398,6 @@ try {
 - `FETCH_FAILED` - Content retrieval failed
 - `PARSE_FAILED` - Content parsing/validation failed
 - `NOT_INITIALIZED` - Service not initialized
-- `SPACE_REGISTRATION_FAILED` - Space registration failed
 
 ## Architecture Patterns
 
@@ -431,7 +445,7 @@ yarn clean
 ```
 forever-message-ipfs/
 ├── src/
-│   ├── ipfs-service.ts       # IPFS upload/retrieval
+│   ├── service.ts            # IPFS upload/retrieval
 │   ├── state-tracker.ts      # In-memory state management
 │   ├── bottle-contract.ts    # Smart contract wrapper
 │   ├── ipfs-count-sync.ts    # Sync coordinator
@@ -447,8 +461,8 @@ forever-message-ipfs/
 
 ## Dependencies
 
+- `@aws-sdk/client-s3` - AWS S3 client for Filebase compatibility
 - `@loscolmebrothers/forever-message-types` - Shared type definitions
-- `@storacha/client` - IPFS/Filecoin storage via Storacha
 - `ethers` - Ethereum interaction library
 
 ## License

@@ -3,7 +3,7 @@ export {
   createIPFSService,
   getIPFSService,
   resetIPFSService,
-  LighthouseConfig,
+  FilebaseConfig,
   IIPFSService,
   CacheEntry,
 } from "./service";
